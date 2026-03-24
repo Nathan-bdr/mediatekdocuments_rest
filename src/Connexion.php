@@ -91,6 +91,27 @@ class Connexion {
             return null;
         }
     }
+    
+    /**
+    * démarre une transaction
+    */
+    public function beginTransaction() : void{
+        $this->conn->beginTransaction();
+    }
+
+    /**
+     * valide une transaction
+     */
+    public function commit() : void{
+        $this->conn->commit();
+    }
+
+    /**
+     * annule une transaction
+     */
+    public function rollBack() : void{
+        $this->conn->rollBack();
+    }
 	
     /**
      * prépare la requête

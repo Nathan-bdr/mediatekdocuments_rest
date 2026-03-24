@@ -63,8 +63,12 @@ class MyAccessBDD extends AccessBDD {
      */	
     protected function traitementInsert(string $table, ?array $champs) : ?int{
         switch($table){
-            case "" :
-                // return $this->uneFonction(parametres);
+            case "livre" :
+                return $this->insertLivre($champs);
+            case "dvd" :
+                return $this->insertDvd($champs);
+            case "revue" :
+                return $this->insertRevue($champs);
             default:                    
                 // cas général
                 return $this->insertOneTupleOneTable($table, $champs);	
@@ -81,8 +85,12 @@ class MyAccessBDD extends AccessBDD {
      */	
     protected function traitementUpdate(string $table, ?string $id, ?array $champs) : ?int{
         switch($table){
-            case "" :
-                // return $this->uneFonction(parametres);
+            case "livre" :
+                return $this->updateLivre($id, $champs);
+            case "dvd" :
+                return $this->updateDvd($id, $champs);
+            case "revue" :
+                return $this->updateRevue($id, $champs);
             default:                    
                 // cas général
                 return $this->updateOneTupleOneTable($table, $id, $champs);
@@ -98,8 +106,12 @@ class MyAccessBDD extends AccessBDD {
      */	
     protected function traitementDelete(string $table, ?array $champs) : ?int{
         switch($table){
-            case "" :
-                // return $this->uneFonction(parametres);
+            case "livre" :
+                return $this->deleteLivre($champs);
+            case "dvd" :
+                return $this->deleteDvd($champs);
+            case "revue" :
+                return $this->deleteRevue($champs);
             default:                    
                 // cas général
                 return $this->deleteTuplesOneTable($table, $champs);	
@@ -277,4 +289,480 @@ class MyAccessBDD extends AccessBDD {
         return $this->conn->queryBDD($requete, $champNecessaire);
     }		    
     
+    /**
+     * Insère un livre dans les 3 tables : document, livre_dvd, livre
+     * @param array|null $champs
+     * @return int|null
+     */
+    private function insertLivre(?array $champs) : ?int{
+        if(empty($champs)){
+            return null;
+        }
+        try{
+            // on démarre la transaction
+            $this->conn->beginTransaction();
+            
+            // insertion dans la table document
+            $champsDocument = [
+                "id"       => $champs["Id"],
+                "titre"    => $champs["Titre"],
+                "image"    => $champs["Image"],
+                "idGenre"  => $champs["IdGenre"],
+                "idPublic" => $champs["IdPublic"],
+                "idRayon"  => $champs["IdRayon"]
+            ];
+            $retour = $this->insertOneTupleOneTable("document", $champsDocument);
+            if(is_null($retour)){
+                $this->conn->rollBack();
+                return null;
+            }
+            
+            // insertion dans la table livre_dvd
+            $champsLivreDvd = [
+                "id" => $champs["Id"]
+            ];
+            $retour = $this->insertOneTupleOneTable("livres_dvd", $champsLivreDvd);
+            if(is_null($retour)){
+                $this->conn->rollBack();
+                return null;
+            }
+            
+            // insertion dans la table livre
+            $champsLivre = [
+                "id"         => $champs["Id"],
+                "ISBN"       => $champs["Isbn"],
+                "auteur"     => $champs["Auteur"],
+                "collection" => $champs["Collection"]
+            ];
+            $retour = $this->insertOneTupleOneTable("livre", $champsLivre);
+            if(is_null($retour)){
+                $this->conn->rollBack();
+                return null;
+            }
+            
+            // les 3 insertions ont bien été faites, on valide
+            $this->conn->commit();
+            return 1;
+            
+        }catch(Exception $e){
+            $this->conn->rollBack();
+            return null;
+        }
+    }
+    
+    /**
+     * Modifie un livre dans les tables document et livre
+     * @param string|null $id
+     * @param array|null $champs
+     * @return int|null
+     */
+    private function updateLivre(?string $id, ?array $champs) : ?int{
+        if(empty($champs) || is_null($id)){
+            return null;
+        }
+        try{
+            // on démarre la transaction
+            $this->conn->beginTransaction();
+            
+            // modification dans la table document
+            $champsDocument = [
+                "titre"    => $champs["Titre"],
+                "image"    => $champs["Image"],
+                "idGenre"  => $champs["IdGenre"],
+                "idPublic" => $champs["IdPublic"],
+                "idRayon"  => $champs["IdRayon"]
+            ];
+            $retour = $this->updateOneTupleOneTable("document", $id, $champsDocument);
+            if(is_null($retour)){
+                $this->conn->rollBack();
+                return null;
+            }
+            
+            // modification dans la table livre
+            $champsLivre = [
+                "ISBN"       => $champs["Isbn"],
+                "auteur"     => $champs["Auteur"],
+                "collection" => $champs["Collection"]
+            ];
+            $retour = $this->updateOneTupleOneTable("livre", $id, $champsLivre);
+            if(is_null($retour)){
+                $this->conn->rollBack();
+                return null;
+            }
+            
+            // les 2 modifications ont bien été faites, on valide
+            $this->conn->commit();
+            return 1;
+            
+        }catch(Exception $e){
+            $this->conn->rollBack();
+            return null;
+        }
+    }
+    
+    /**
+     * Supprime un livre dans les tables livre, livre_dvd et document
+     * @param array|null $champs
+     * @return int|null
+     */
+    private function deleteLivre(?array $champs) : ?int{
+        if(empty($champs) || !array_key_exists('id', $champs)){
+            return null;
+        }
+        $id = $champs["id"];
+        
+        // on vérifie qu'il n'y a pas d'exemplaires rattachés
+        $requeteExemplaire = "select count(*) as nb from exemplaire where id=:id;";
+        $resultat = $this->conn->queryBDD($requeteExemplaire, ["id" => $id]);
+        if(is_null($resultat) || $resultat[0]["nb"] > 0){
+            return null;
+        }
+        
+        // on vérifie qu'il n'y a pas de commandes rattachées
+        $requeteCommande = "select count(*) as nb from commandedocument where idLivreDvd=:id;";
+        $resultat = $this->conn->queryBDD($requeteCommande, ["id" => $id]);
+        if(is_null($resultat) || $resultat[0]["nb"] > 0){
+            return null;
+        }
+        
+        try{
+            // on démarre la transaction
+            $this->conn->beginTransaction();
+            
+            // suppression dans livre
+            $retour = $this->deleteTuplesOneTable("livre", ["id" => $id]);
+            if(is_null($retour)){
+                $this->conn->rollBack();
+                return null;
+            }
+            
+            // suppression dans livre_dvd
+            $retour = $this->deleteTuplesOneTable("livres_dvd", ["id" => $id]);
+            if(is_null($retour)){
+                $this->conn->rollBack();
+                return null;
+            }
+            
+            // suppression dans document
+            $retour = $this->deleteTuplesOneTable("document", ["id" => $id]);
+            if(is_null($retour)){
+                $this->conn->rollBack();
+                return null;
+            }
+            
+            // les 3 suppressions ont bien été faites, on valide
+            $this->conn->commit();
+            return 1;
+            
+        }catch(Exception $e){
+            $this->conn->rollBack();
+            return null;
+        }
+    }
+    
+    /**
+     * Insère un dvd dans les 3 tables : document, livre_dvd, dvd
+     * @param array|null $champs
+     * @return int|null
+     */
+    private function insertDvd(?array $champs) : ?int{
+        if(empty($champs)){
+            return null;
+        }
+        try{
+            // on démarre la transaction
+            $this->conn->beginTransaction();
+            
+            // insertion dans la table document
+            $champsDocument = [
+                "id"       => $champs["Id"],
+                "titre"    => $champs["Titre"],
+                "image"    => $champs["Image"],
+                "idGenre"  => $champs["IdGenre"],
+                "idPublic" => $champs["IdPublic"],
+                "idRayon"  => $champs["IdRayon"]
+            ];
+            $retour = $this->insertOneTupleOneTable("document", $champsDocument);
+            if(is_null($retour)){
+                $this->conn->rollBack();
+                return null;
+            }
+            
+            // insertion dans la table livre_dvd
+            $champsLivreDvd = ["id" => $champs["Id"]];
+            $retour = $this->insertOneTupleOneTable("livres_dvd", $champsLivreDvd);
+            if(is_null($retour)){
+                $this->conn->rollBack();
+                return null;
+            }
+            
+            // insertion dans la table dvd
+            $champsDvd = [
+                "id"          => $champs["Id"],
+                "duree"       => $champs["Duree"],
+                "realisateur" => $champs["Realisateur"],
+                "synopsis"    => $champs["Synopsis"]
+            ];
+            $retour = $this->insertOneTupleOneTable("dvd", $champsDvd);
+            if(is_null($retour)){
+                $this->conn->rollBack();
+                return null;
+            }
+            
+            // les 3 insertions ont bien été faites, on valide
+            $this->conn->commit();
+            return 1;
+            
+        }catch(Exception $e){
+            $this->conn->rollBack();
+            return null;
+        }
+    }
+    
+    /**
+     * Modifie un dvd dans les tables document et dvd
+     * @param string|null $id
+     * @param array|null $champs
+     * @return int|null
+     */
+    private function updateDvd(?string $id, ?array $champs) : ?int{
+        if(empty($champs) || is_null($id)){
+            return null;
+        }
+        try{
+            // on démarre la transaction
+            $this->conn->beginTransaction();
+            
+            // modification dans la table document
+            $champsDocument = [
+                "titre"    => $champs["Titre"],
+                "image"    => $champs["Image"],
+                "idGenre"  => $champs["IdGenre"],
+                "idPublic" => $champs["IdPublic"],
+                "idRayon"  => $champs["IdRayon"]
+            ];
+            $retour = $this->updateOneTupleOneTable("document", $id, $champsDocument);
+            if(is_null($retour)){
+                $this->conn->rollBack();
+                return null;
+            }
+            
+            // modification dans la table dvd
+            $champsDvd = [
+                "duree"       => $champs["Duree"],
+                "realisateur" => $champs["Realisateur"],
+                "synopsis"    => $champs["Synopsis"]
+            ];
+            $retour = $this->updateOneTupleOneTable("dvd", $id, $champsDvd);
+            if(is_null($retour)){
+                $this->conn->rollBack();
+                return null;
+            }
+            
+            // les 2 modifications ont bien été faites, on valide
+            $this->conn->commit();
+            return 1;
+            
+        }catch(Exception $e){
+            $this->conn->rollBack();
+            return null;
+        }
+    }
+    
+    /**
+     * Supprime un dvd dans les tables dvd, livre_dvd et document
+     * @param array|null $champs
+     * @return int|null
+     */
+    private function deleteDvd(?array $champs) : ?int{
+        if(empty($champs) || !array_key_exists('id', $champs)){
+            return null;
+        }
+        $id = $champs["id"];
+        
+        // on vérifie qu'il n'y a pas d'exemplaires rattachés
+        $requeteExemplaire = "select count(*) as nb from exemplaire where id=:id;";
+        $resultat = $this->conn->queryBDD($requeteExemplaire, ["id" => $id]);
+        if(is_null($resultat) || $resultat[0]["nb"] > 0){
+            return null;
+        }
+        
+        // on vérifie qu'il n'y a pas de commandes rattachées
+        $requeteCommande = "select count(*) as nb from commandedocument where idLivreDvd=:id;";
+        $resultat = $this->conn->queryBDD($requeteCommande, ["id" => $id]);
+        if(is_null($resultat) || $resultat[0]["nb"] > 0){
+            return null;
+        }
+        
+        try{
+            // on démarre la transaction
+            $this->conn->beginTransaction();
+            
+            // suppression dans dvd
+            $retour = $this->deleteTuplesOneTable("dvd", ["id" => $id]);
+            if(is_null($retour)){ $this->conn->rollBack(); return null; }
+            
+            // suppression dans livre_dvd
+            $retour = $this->deleteTuplesOneTable("livres_dvd", ["id" => $id]);
+            if(is_null($retour)){ $this->conn->rollBack(); return null; }
+            
+            // suppression dans document
+            $retour = $this->deleteTuplesOneTable("document", ["id" => $id]);
+            if(is_null($retour)){ $this->conn->rollBack(); return null; }
+            
+            // les 3 suppressions ont bien été faites, on valide
+            $this->conn->commit();
+            return 1;
+            
+        }catch(Exception $e){
+            $this->conn->rollBack();
+            return null;
+        }
+    }
+    
+    /**
+     * Insère une revue dans les 2 tables : document, revue
+     * @param array|null $champs
+     * @return int|null
+     */
+    private function insertRevue(?array $champs) : ?int{
+        if(empty($champs)){
+            return null;
+        }
+        try{
+            // on démarre la transaction
+            $this->conn->beginTransaction();
+            
+            // insertion dans la table document
+            $champsDocument = [
+                "id"       => $champs["Id"],
+                "titre"    => $champs["Titre"],
+                "image"    => $champs["Image"],
+                "idGenre"  => $champs["IdGenre"],
+                "idPublic" => $champs["IdPublic"],
+                "idRayon"  => $champs["IdRayon"]
+            ];
+            $retour = $this->insertOneTupleOneTable("document", $champsDocument);
+            if(is_null($retour)){
+                $this->conn->rollBack();
+                return null;
+            }
+            
+            // insertion dans la table revue
+            $champsRevue = [
+                "id"              => $champs["Id"],
+                "periodicite"     => $champs["Periodicite"],
+                "delaiMiseADispo" => $champs["DelaiMiseADispo"]
+            ];
+            $retour = $this->insertOneTupleOneTable("revue", $champsRevue);
+            if(is_null($retour)){
+                $this->conn->rollBack();
+                return null;
+            }
+            
+            // les 2 insertions ont bien été faites, on valide
+            $this->conn->commit();
+            return 1;
+            
+        }catch(Exception $e){
+            $this->conn->rollBack();
+            return null;
+        }
+    }
+    
+    /**
+     * Modifie une revue dans les tables document et revue
+     * @param string|null $id
+     * @param array|null $champs
+     * @return int|null
+     */
+    private function updateRevue(?string $id, ?array $champs) : ?int{
+        if(empty($champs) || is_null($id)){
+            return null;
+        }
+        try{
+            // on démarre la transaction
+            $this->conn->beginTransaction();
+            
+            // modification dans la table document
+            $champsDocument = [
+                "titre"    => $champs["Titre"],
+                "image"    => $champs["Image"],
+                "idGenre"  => $champs["IdGenre"],
+                "idPublic" => $champs["IdPublic"],
+                "idRayon"  => $champs["IdRayon"]
+            ];
+            $retour = $this->updateOneTupleOneTable("document", $id, $champsDocument);
+            if(is_null($retour)){
+                $this->conn->rollBack();
+                return null;
+            }
+            
+            // modification dans la table revue
+            $champsRevue = [
+                "periodicite"     => $champs["Periodicite"],
+                "delaiMiseADispo" => $champs["DelaiMiseADispo"]
+            ];
+            $retour = $this->updateOneTupleOneTable("revue", $id, $champsRevue);
+            if(is_null($retour)){
+                $this->conn->rollBack();
+                return null;
+            }
+            
+            // les 2 modifications ont bien été faites, on valide
+            $this->conn->commit();
+            return 1;
+            
+        }catch(Exception $e){
+            $this->conn->rollBack();
+            return null;
+        }
+    }
+    
+    /**
+     * Supprime une revue dans les tables revue et document
+     * @param array|null $champs
+     * @return int|null
+     */
+    private function deleteRevue(?array $champs) : ?int{
+        if(empty($champs) || !array_key_exists('id', $champs)){
+            return null;
+        }
+        $id = $champs["id"];
+        
+        // on vérifie qu'il n'y a pas d'exemplaires rattachés
+        $requeteExemplaire = "select count(*) as nb from exemplaire where id=:id;";
+        $resultat = $this->conn->queryBDD($requeteExemplaire, ["id" => $id]);
+        if(is_null($resultat) || $resultat[0]["nb"] > 0){
+            return null;
+        }
+        
+        // on vérifie qu'il n'y a pas d'abonnements rattachés
+        $requeteCommande = "select count(*) as nb from abonnement where idRevue=:id;";
+        $resultat = $this->conn->queryBDD($requeteCommande, ["id" => $id]);
+        if(is_null($resultat) || $resultat[0]["nb"] > 0){
+            return null;
+        }
+        
+        try{
+            // on démarre la transaction
+            $this->conn->beginTransaction();
+            
+            // suppression dans revue
+            $retour = $this->deleteTuplesOneTable("revue", ["id" => $id]);
+            if(is_null($retour)){ $this->conn->rollBack(); return null; }
+            
+            // suppression dans document
+            $retour = $this->deleteTuplesOneTable("document", ["id" => $id]);
+            if(is_null($retour)){ $this->conn->rollBack(); return null; }
+            
+            // les 2 suppressions ont bien été faites, on valide
+            $this->conn->commit();
+            return 1;
+            
+        }catch(Exception $e){
+            $this->conn->rollBack();
+            return null;
+        }
+    }
 }
