@@ -54,6 +54,8 @@ class MyAccessBDD extends AccessBDD {
                 return $this->selectAbonnementsRevue($champs);
             case "abonnementexpire" :
                 return $this->selectAbonnementsExpirantBientot();
+            case "utilisateur" :
+                return $this->selectUtilisateur($champs);
             case "" :
                 // return $this->uneFonction(parametres);
             default:
@@ -1029,5 +1031,19 @@ class MyAccessBDD extends AccessBDD {
         }
         $id = $champs["id"];
         return $this->deleteTuplesOneTable("exemplaire", ["id" => $id, "numero" => $champs["Numero"]]);
+    }
+    
+    /**
+    * Récupère un utilisateur par son login et mot de passe
+    */
+    private function selectUtilisateur(?array $champs) : ?array{
+        if(empty($champs)){
+            return null;
+        }
+        $requete = "select u.login, u.pwd, u.idService, s.libelle ";
+        $requete .= "from utilisateur u ";
+        $requete .= "join service s on u.idService = s.id ";
+        $requete .= "where u.login = :login and u.pwd = :pwd;";
+        return $this->conn->queryBDD($requete, $champs);
     }
 }
