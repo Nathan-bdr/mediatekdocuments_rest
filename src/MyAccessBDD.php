@@ -46,6 +46,10 @@ class MyAccessBDD extends AccessBDD {
             case "etat" :
                 // select portant sur une table contenant juste id et libelle
                 return $this->selectTableSimple($table);
+            case "commandedocument" :
+                return $this->selectCommandesDocument($champs);
+            case "suivi" :
+                return $this->selectTableSimple("suivi");
             case "" :
                 // return $this->uneFonction(parametres);
             default:
@@ -69,6 +73,8 @@ class MyAccessBDD extends AccessBDD {
                 return $this->insertDvd($champs);
             case "revue" :
                 return $this->insertRevue($champs);
+            case "commandedocument" :
+                return $this->insertCommandeDocument($champs);
             default:                    
                 // cas général
                 return $this->insertOneTupleOneTable($table, $champs);	
@@ -91,6 +97,8 @@ class MyAccessBDD extends AccessBDD {
                 return $this->updateDvd($id, $champs);
             case "revue" :
                 return $this->updateRevue($id, $champs);
+            case "commandedocument" :
+                return $this->updateSuiviCommande($id, $champs);
             default:                    
                 // cas général
                 return $this->updateOneTupleOneTable($table, $id, $champs);
@@ -112,6 +120,8 @@ class MyAccessBDD extends AccessBDD {
                 return $this->deleteDvd($champs);
             case "revue" :
                 return $this->deleteRevue($champs);
+            case "commandedocument" :
+                return $this->deleteCommandeDocument($champs);
             default:                    
                 // cas général
                 return $this->deleteTuplesOneTable($table, $champs);	
@@ -760,6 +770,121 @@ class MyAccessBDD extends AccessBDD {
             $this->conn->commit();
             return 1;
             
+        }catch(Exception $e){
+            $this->conn->rollBack();
+            return null;
+        }
+    }
+    
+    /**
+    * récupère toutes les commandes d'un document (livre ou dvd)
+    * @param array|null $champs
+    * @return array|null
+    */
+    private function selectCommandesDocument(?array $champs) : ?array{
+        if(empty($champs)){
+            return null;
+        }
+        if(!array_key_exists('id', $champs)){
+            return null;
+        }
+        $champNecessaire['id'] = $champs['id'];
+        $requete = "select cd.id, cd.nbExemplaire, cd.idLivreDvd, cd.idSuivi, s.libelle as suivi, ";
+        $requete .= "c.dateCommande, c.montant ";
+        $requete .= "from commandedocument cd ";
+        $requete .= "join commande c on cd.id = c.id ";
+        $requete .= "join suivi s on cd.idSuivi = s.id ";
+        $requete .= "where cd.idLivreDvd = :id ";
+        $requete .= "order by c.dateCommande DESC";
+        return $this->conn->queryBDD($requete, $champNecessaire);
+    }
+    
+    /**
+    * Insère une commande dans les tables commande et commandedocument
+    */
+    private function insertCommandeDocument(?array $champs) : ?int{
+        if(empty($champs)){
+            return null;
+        }
+        try{
+            $this->conn->beginTransaction();
+
+            $champsCommande = [
+                "id"            => $champs["Id"],
+                "dateCommande"  => $champs["DateCommande"],
+                "montant"       => $champs["Montant"]
+            ];
+            $retour = $this->insertOneTupleOneTable("commande", $champsCommande);
+            if(is_null($retour)){
+                $this->conn->rollBack();
+                return null;
+            }
+
+            $champsCommandeDocument = [
+                "id"           => $champs["Id"],
+                "nbExemplaire" => $champs["NbExemplaire"],
+                "idLivreDvd"   => $champs["IdLivreDvd"],
+                "idSuivi"      => $champs["IdSuivi"]
+            ];
+            $retour = $this->insertOneTupleOneTable("commandedocument", $champsCommandeDocument);
+            if(is_null($retour)){
+                $this->conn->rollBack();
+                return null;
+            }
+
+            $this->conn->commit();
+            return 1;
+
+        }catch(Exception $e){
+            $this->conn->rollBack();
+            return null;
+        }
+    }
+
+    /**
+     * Modifie le suivi d'une commande
+     */
+    private function updateSuiviCommande(?string $id, ?array $champs) : ?int{
+        if(empty($champs) || is_null($id)){
+            return null;
+        }
+        $champsUpdate = [
+            "idSuivi" => $champs["IdSuivi"]
+        ];
+        return $this->updateOneTupleOneTable("commandedocument", $id, $champsUpdate);
+    }
+
+    /**
+     * Supprime une commande uniquement si elle n'est pas livrée
+     */
+    private function deleteCommandeDocument(?array $champs) : ?int{
+        if(empty($champs) || !array_key_exists('id', $champs)){
+            return null;
+        }
+        $id = $champs["id"];
+
+        // on vérifie que la commande n'est pas livrée ou réglée
+        $requete = "select idSuivi from commandedocument where id=:id;";
+        $resultat = $this->conn->queryBDD($requete, ["id" => $id]);
+        if(is_null($resultat) || empty($resultat)){
+            return null;
+        }
+        if($resultat[0]["idSuivi"] == "00003" || $resultat[0]["idSuivi"] == "00004"){
+            return null;
+        }
+
+        try{
+            $this->conn->beginTransaction();
+
+            $retour = $this->deleteTuplesOneTable("commandedocument", ["id" => $id]);
+            if(is_null($retour)){ $this->conn->rollBack(); return null; }
+
+            $retour = $this->deleteTuplesOneTable("commande", ["id" => $id]);
+            if(is_null($retour)){ $this->conn->rollBack(); return null; }
+
+            $this->conn->commit();
+            return 1;
+
         }catch(Exception $e){
             $this->conn->rollBack();
             return null;
