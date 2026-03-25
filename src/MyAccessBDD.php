@@ -50,6 +50,10 @@ class MyAccessBDD extends AccessBDD {
                 return $this->selectCommandesDocument($champs);
             case "suivi" :
                 return $this->selectTableSimple("suivi");
+            case "abonnement" :
+                return $this->selectAbonnementsRevue($champs);
+            case "abonnementexpire" :
+                return $this->selectAbonnementsExpirantBientot();
             case "" :
                 // return $this->uneFonction(parametres);
             default:
@@ -75,6 +79,8 @@ class MyAccessBDD extends AccessBDD {
                 return $this->insertRevue($champs);
             case "commandedocument" :
                 return $this->insertCommandeDocument($champs);
+            case "abonnement" :
+                return $this->insertAbonnement($champs);
             default:                    
                 // cas général
                 return $this->insertOneTupleOneTable($table, $champs);	
@@ -99,6 +105,8 @@ class MyAccessBDD extends AccessBDD {
                 return $this->updateRevue($id, $champs);
             case "commandedocument" :
                 return $this->updateSuiviCommande($id, $champs);
+            case "abonnement" :
+                return $this->deleteAbonnement($champs);
             default:                    
                 // cas général
                 return $this->updateOneTupleOneTable($table, $id, $champs);
@@ -889,5 +897,104 @@ class MyAccessBDD extends AccessBDD {
             $this->conn->rollBack();
             return null;
         }
+    }
+    
+    /**
+    * Récupère tous les abonnements d'une revue
+    */
+    private function selectAbonnementsRevue(?array $champs) : ?array{
+        if(empty($champs) || !array_key_exists('id', $champs)){
+            return null;
+        }
+        $champNecessaire['id'] = $champs['id'];
+        $requete = "select a.id, a.dateFinAbonnement, a.idRevue, ";
+        $requete .= "c.dateCommande, c.montant, d.titre ";
+        $requete .= "from abonnement a ";
+        $requete .= "join commande c on a.id = c.id ";
+        $requete .= "join revue r on a.idRevue = r.id ";
+        $requete .= "join document d on r.id = d.id ";
+        $requete .= "where a.idRevue = :id ";
+        $requete .= "order by c.dateCommande DESC";
+        return $this->conn->queryBDD($requete, $champNecessaire);
+    }
+
+    /**
+     * Insère un abonnement dans les tables commande et abonnement
+     */
+    private function insertAbonnement(?array $champs) : ?int{
+        if(empty($champs)){
+            return null;
+        }
+        try{
+            $this->conn->beginTransaction();
+
+            $champsCommande = [
+                "id"           => $champs["Id"],
+                "dateCommande" => $champs["DateCommande"],
+                "montant"      => $champs["Montant"]
+            ];
+            $retour = $this->insertOneTupleOneTable("commande", $champsCommande);
+            if(is_null($retour)){
+                $this->conn->rollBack();
+                return null;
+            }
+
+            $champsAbonnement = [
+                "id"                 => $champs["Id"],
+                "dateFinAbonnement"  => $champs["DateFinAbonnement"],
+                "idRevue"            => $champs["IdRevue"]
+            ];
+            $retour = $this->insertOneTupleOneTable("abonnement", $champsAbonnement);
+            if(is_null($retour)){
+                $this->conn->rollBack();
+                return null;
+            }
+
+            $this->conn->commit();
+            return 1;
+
+        }catch(Exception $e){
+            $this->conn->rollBack();
+            return null;
+        }
+    }
+
+    /**
+     * Supprime un abonnement dans les tables abonnement et commande
+     */
+    private function deleteAbonnement(?array $champs) : ?int{
+        if(empty($champs) || !array_key_exists('id', $champs)){
+            return null;
+        }
+        $id = $champs["id"];
+        try{
+            $this->conn->beginTransaction();
+
+            $retour = $this->deleteTuplesOneTable("abonnement", ["id" => $id]);
+            if(is_null($retour)){ $this->conn->rollBack(); return null; }
+
+            $retour = $this->deleteTuplesOneTable("commande", ["id" => $id]);
+            if(is_null($retour)){ $this->conn->rollBack(); return null; }
+
+            $this->conn->commit();
+            return 1;
+
+        }catch(Exception $e){
+            $this->conn->rollBack();
+            return null;
+        }
+    }
+    
+    /**
+    * Récupère les revues dont l'abonnement se termine dans moins de 30 jours
+    */
+    private function selectAbonnementsExpirantBientot() : ?array{
+        $requete = "select r.id, d.titre, a.dateFinAbonnement ";
+        $requete .= "from abonnement a ";
+        $requete .= "join revue r on a.idRevue = r.id ";
+        $requete .= "join document d on r.id = d.id ";
+        $requete .= "where a.dateFinAbonnement between curdate() and date_add(curdate(), interval 30 day) ";
+        $requete .= "order by a.dateFinAbonnement ASC";
+        return $this->conn->queryBDD($requete);
     }
 }
