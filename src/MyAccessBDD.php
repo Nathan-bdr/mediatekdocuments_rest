@@ -107,6 +107,8 @@ class MyAccessBDD extends AccessBDD {
                 return $this->updateSuiviCommande($id, $champs);
             case "abonnement" :
                 return $this->deleteAbonnement($champs);
+            case "exemplaire" :
+                return $this->updateEtatExemplaire($id, $champs);
             default:                    
                 // cas général
                 return $this->updateOneTupleOneTable($table, $id, $champs);
@@ -130,6 +132,8 @@ class MyAccessBDD extends AccessBDD {
                 return $this->deleteRevue($champs);
             case "commandedocument" :
                 return $this->deleteCommandeDocument($champs);
+            case "exemplaire" :
+                return $this->deleteExemplaire($champs);
             default:                    
                 // cas général
                 return $this->deleteTuplesOneTable($table, $champs);	
@@ -300,8 +304,9 @@ class MyAccessBDD extends AccessBDD {
             return null;
         }
         $champNecessaire['id'] = $champs['id'];
-        $requete = "Select e.id, e.numero, e.dateAchat, e.photo, e.idEtat ";
+        $requete = "Select e.id, e.numero, e.dateAchat, e.photo, e.idEtat, et.libelle ";
         $requete .= "from exemplaire e join document d on e.id=d.id ";
+        $requete .= "join etat et on e.idEtat=et.id ";
         $requete .= "where e.id = :id ";
         $requete .= "order by e.dateAchat DESC";
         return $this->conn->queryBDD($requete, $champNecessaire);
@@ -996,5 +1001,33 @@ class MyAccessBDD extends AccessBDD {
         $requete .= "where a.dateFinAbonnement between curdate() and date_add(curdate(), interval 30 day) ";
         $requete .= "order by a.dateFinAbonnement ASC";
         return $this->conn->queryBDD($requete);
+    }
+    
+    /**
+    * Modifie l'état d'un exemplaire
+    */
+    private function updateEtatExemplaire(?string $id, ?array $champs) : ?int{
+        if(empty($champs) || is_null($id)){
+            return null;
+        }
+        // la clé primaire est composée de id ET numero
+        $requete = "update exemplaire set idEtat=:idEtat where id=:id and numero=:numero;";
+        $params = [
+            "idEtat"  => $champs["IdEtat"],
+            "id"      => $id,
+            "numero"  => $champs["Numero"]
+        ];
+        return $this->conn->updateBDD($requete, $params);
+    }
+
+    /**
+     * Supprime un exemplaire
+     */
+    private function deleteExemplaire(?array $champs) : ?int{
+        if(empty($champs) || !array_key_exists('id', $champs)){
+            return null;
+        }
+        $id = $champs["id"];
+        return $this->deleteTuplesOneTable("exemplaire", ["id" => $id, "numero" => $champs["Numero"]]);
     }
 }
